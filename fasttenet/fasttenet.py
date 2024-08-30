@@ -1,6 +1,7 @@
 import os
 import os.path as osp
 import time
+import re
 import math
 from itertools import permutations
 import multiprocessing
@@ -12,6 +13,25 @@ import mate
 
 from fasttenet.data import load_exp_data, load_time_data
 from fasttenet.utils import get_device_list
+
+
+def load_gene_chr_mapping(filename):
+    gene_chr_mapping = {}
+    with open(filename, "r") as f:
+        for line in f:
+            chr, gene = line.strip().split()
+            gene_chr_mapping[gene] = chr
+    return gene_chr_mapping
+def extract_gene_peaks_from_exp(self):
+    # Use list comprehension to filter out elements that match the chr pattern
+    peaks = [item for item in self._node_name if re.match(r"^chr[0-9XY]+-[0-9]+-[0-9]+$", item)]
+    gene = [item for item in self._node_name if not re.match(r"^chr[0-9XY]+-[0-9]+-[0-9]+$", item)]
+    return peaks, gene
+def extract_gene_peaks_idx_from_exp(self):
+    # Use list comprehension to filter out elements that match the chr pattern
+    peak_indices = [index for index, item in enumerate(self._node_name) if re.match(r"^chr[0-9XY]+-[0-9]+-[0-9]+$", item)]
+    gene_indices = [index for index, item in enumerate(self._node_name) if not re.match(r"^chr[0-9XY]+-[0-9]+-[0-9]+$", item)]
+    return peak_indices, gene_indices
 
 class FastTENET(object):
     def __init__(self,
@@ -35,6 +55,7 @@ class FastTENET(object):
             dpath_trj_data = osp.join(droot, inits['FPATH_TRJ'])
             dpath_branch_data = osp.join(droot, inits['FPATH_BRANCH'])
             dpath_tf_data = osp.join(droot, inits['FPATH_TF'])
+            dpath_gene_chr_data = osp.join(droot, inits['FPATH_GENE_CHR'])  #add for TENET+
             make_binary = bool(inits['MAKE_BINARY'])
 
             self._node_name, self._exp_data = load_exp_data(dpath_exp_data, make_binary)
@@ -55,8 +76,12 @@ class FastTENET(object):
                 raise ValueError("Branch data should be refined")
 
             self._node_name, self._exp_data = load_exp_data(dpath_exp_data, make_binary)
+            self._gene_name, self._peak_name = extract_gene_peaks_from_exp(self)
+            self._gene_idx, self._peak_idx = extract_gene_peaks_idx_from_exp(self)
+            
             self._trajectory = load_time_data(dpath_trj_data, dtype=np.float32)
             self._branch = load_time_data(dpath_branch_data, dtype=np.int32)
+            self._gene_chr_mapping = load_gene_chr_mapping(dpath_gene_chr_data)
 
             if dpath_tf_data is not None:
                 self._tf = np.loadtxt(dpath_tf_data, dtype=str)
@@ -149,11 +174,32 @@ class FastTENET(object):
         if self._tf is not None:
             _, inds_source, _ = np.intersect1d(self._node_name, self._tf, return_indices=True)
 
-            for ix_t in range(len(self._node_name)):
+            # for ix_t in range(len(self._node_name)):
+            #     for ix_s in inds_source:
+            #         if ix_t==ix_s:
+            #             continue
+            #         pairs.append((ix_t, ix_s))
+            for ix_t in gene_indices:
                 for ix_s in inds_source:
-                    if ix_t==ix_s:
+                    if ix_t == ix_s:
                         continue
                     pairs.append((ix_t, ix_s))
+            for ix_t in peak_indices:
+                for ix_s in inds_source:
+                    if ix_t == ix_s:
+                        continue
+                    pairs.append((ix_t, ix_s))
+            for ix_t in gene_indices:
+                gene = node_name[ix_t]
+                gene_chr = a.get(gene)
+                if gene_chr is None:
+                    continue
+                for ix_s in peak_indices:
+                    peak = node_name[ix_s]
+                    peak_chr = peak.split('-')[0]
+                    
+                    if peak_chr == gene_chr:
+                        pairs.append((ix_t, ix_s))
         else:
             pairs = permutations(range(len(arr)), 2)
 
