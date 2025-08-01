@@ -12,6 +12,17 @@ import mate
 
 from fasttenet.utils import load_exp_data, load_time_data
 from fasttenet.utils import get_device_list, align_data
+from fasttenet.utils import (
+    create_TENET_Plus_pairs,
+    create_tf_peak_pairs,
+    create_tf_gene_pairs,
+    create_tf_gene_peak_pairs,
+    create_cis_peaksource_pairs,
+    create_peak_peak_pairs,
+    load_sif_connections,
+    load_gene_chr_mapping,
+    load_file_to_list,
+)
 
 class FastTENET(object):
     def __init__(self,
@@ -105,8 +116,51 @@ class FastTENET(object):
             binning_opt: dict = None,
             smoothing_opt: dict = None,
             dt=1,
+            pair_mode: str = 'default',
+            pair_data: dict = None,
             config=None
             ):
+        """Run FastTENET and generate a result matrix.
+
+        Parameters
+        ----------
+        backend : str, optional
+            Backend framework to use. Defaults to ``"cpu"``.
+        device_ids : list[int] or int, optional
+            Device ids to run on.
+        procs_per_device : int, optional
+            Number of worker processes per device.
+        batch_size : int, optional
+            Mini-batch size.
+        num_kernels : int, optional
+            Number of kernels for MATE.
+        binning_method : str, optional
+            Discretization method.
+        kp : float, optional
+            Kernel parameter.
+        binning_opt : dict, optional
+            Options for discretization.
+        smoothing_opt : dict, optional
+            Options for smoothing.
+        dt : int, optional
+            Time step for TE calculation.
+        pair_mode : str, optional
+            Strategy used to form node pairs. ``"default"`` reproduces the
+            original FastTENET behaviour. Other modes require additional data
+            specified via ``pair_data``.
+        pair_data : dict, optional
+            Extra data used when ``pair_mode`` is not ``"default"``. File paths
+            may be provided and will be loaded automatically.
+        config : dict, optional
+            Configuration dictionary. ``PAIR_MODE`` and ``PAIR_DATA`` keys will
+            override the corresponding arguments if present.
+        """
+
+        if config:
+            if 'PAIR_MODE' in config:
+                pair_mode = config['PAIR_MODE']
+            if 'PAIR_DATA' in config and pair_data is None:
+                pair_data = config['PAIR_DATA']
 
         if not backend:
             if config:
@@ -160,19 +214,109 @@ class FastTENET(object):
         else:
             arr = align_data(data=self._exp_data, trj=self._trajectory, branch=self._branch)
 
+        gene_names_dict = {name: idx for idx, name in enumerate(self._node_name)}
         pairs = []
-        if self._tf is not None:
-            _, inds_source, _ = np.intersect1d(self._node_name, self._tf, return_indices=True)
 
-            for ix_t in range(len(self._node_name)):
-                for ix_s in inds_source:
-                    if ix_t==ix_s:
-                        continue
-                    pairs.append((ix_t, ix_s))
+        if pair_mode == 'default':
+            if self._tf is not None:
+                _, inds_source, _ = np.intersect1d(self._node_name, self._tf, return_indices=True)
+                for ix_t in range(len(self._node_name)):
+                    for ix_s in inds_source:
+                        if ix_t == ix_s:
+                            continue
+                        pairs.append((ix_t, ix_s))
+            else:
+                pairs = list(permutations(range(len(arr)), 2))
+
+        elif pair_mode == 'tenet_plus':
+            if not pair_data:
+                raise ValueError('pair_data is required for tenet_plus mode')
+            peaks = pair_data.get('peaks')
+            tf_list = pair_data.get('tf_list', [])
+            gene_chr = pair_data.get('gene_chr')
+
+            if isinstance(peaks, str):
+                peaks = load_file_to_list(peaks)
+            if isinstance(tf_list, str):
+                tf_list = load_file_to_list(tf_list)
+            if isinstance(gene_chr, str):
+                gene_chr = load_gene_chr_mapping(gene_chr)
+
+            genes_per_chr = {}
+            for gene, chr_ in gene_chr.items():
+                if gene in gene_names_dict:
+                    genes_per_chr.setdefault(chr_, []).append(gene)
+
+            only_peak_dict = {g: i for g, i in gene_names_dict.items() if g in peaks}
+            pairs = create_TENET_Plus_pairs(peaks, genes_per_chr, gene_names_dict, tf_list)
+
+        elif pair_mode == 'tf_gene':
+            if not pair_data:
+                raise ValueError('pair_data is required for tf_gene mode')
+            tf_list = pair_data.get('tf_list', [])
+            if isinstance(tf_list, str):
+                tf_list = load_file_to_list(tf_list)
+            only_gene_dict = {g: i for g, i in gene_names_dict.items() if g not in pair_data.get('peaks', [])}
+            pairs = create_tf_gene_pairs(gene_names_dict, only_gene_dict, tf_list)
+
+        elif pair_mode == 'tf_peak':
+            if not pair_data:
+                raise ValueError('pair_data is required for tf_peak mode')
+            tf_list = pair_data.get('tf_list', [])
+            peaks = pair_data.get('peaks', [])
+            if isinstance(tf_list, str):
+                tf_list = load_file_to_list(tf_list)
+            if isinstance(peaks, str):
+                peaks = load_file_to_list(peaks)
+            only_peak_dict = {g: i for g, i in gene_names_dict.items() if g in peaks}
+            pairs = create_tf_peak_pairs(gene_names_dict, only_peak_dict, tf_list)
+
+        elif pair_mode == 'tf_gene_peak':
+            if not pair_data:
+                raise ValueError('pair_data is required for tf_gene_peak mode')
+            tf_list = pair_data.get('tf_list', [])
+            if isinstance(tf_list, str):
+                tf_list = load_file_to_list(tf_list)
+            pairs = create_tf_gene_peak_pairs(gene_names_dict, tf_list)
+
+        elif pair_mode == 'cis_peak_gene':
+            if not pair_data:
+                raise ValueError('pair_data is required for cis_peak_gene mode')
+            peaks = pair_data.get('peaks')
+            gene_chr = pair_data.get('gene_chr')
+            if isinstance(peaks, str):
+                peaks = load_file_to_list(peaks)
+            if isinstance(gene_chr, str):
+                gene_chr = load_gene_chr_mapping(gene_chr)
+            genes_per_chr = {}
+            for gene, chr_ in gene_chr.items():
+                if gene in gene_names_dict:
+                    genes_per_chr.setdefault(chr_, []).append(gene)
+            pairs = create_cis_peaksource_pairs(peaks, genes_per_chr, gene_names_dict)
+
+        elif pair_mode == 'cis_peak_peak':
+            if not pair_data:
+                raise ValueError('pair_data is required for cis_peak_peak mode')
+            peaks = pair_data.get('peaks', [])
+            if isinstance(peaks, str):
+                peaks = load_file_to_list(peaks)
+            only_peak_dict = {g: i for g, i in gene_names_dict.items() if g in peaks}
+            pairs = create_peak_peak_pairs(peaks, only_peak_dict, max_distance=None)
+
+        elif pair_mode == 'triplet':
+            if not pair_data or 'sif_file' not in pair_data:
+                raise ValueError('pair_data with "sif_file" is required for triplet mode')
+            sif_file = pair_data['sif_file']
+            if isinstance(sif_file, str):
+                tf_gene, tf_peak, peak_gene = load_sif_connections(sif_file, gene_names_dict)
+                pairs = tf_gene + tf_peak + peak_gene
+            else:
+                raise ValueError('sif_file must be a file path')
+
         else:
-            pairs = permutations(range(len(arr)), 2)
+            raise ValueError(f'Invalid pair_mode: {pair_mode}')
 
-        pairs = np.asarray(tuple(pairs), dtype=np.int32)
+        pairs = np.asarray(list(set(pairs)), dtype=np.int32)
 
         if backend == 'lightning' or backend == 'gpu' or backend == 'cuda':
             self._mate = mate.MATELightning(arr=arr,
