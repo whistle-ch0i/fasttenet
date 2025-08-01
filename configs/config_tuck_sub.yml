@@ -24,3 +24,5 @@ KP: 0.5
 # the SMOOTHING_OPT parameter is optional and must be dictionary type (ex. {'method': 'exp'})
 # 'mov', 'savgol', 'exp', 'loess' method parameters are available.
 SMOOTHING_OPT: None
+PAIR_MODE: default
+PAIR_DATA: null

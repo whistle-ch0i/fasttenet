@@ -202,7 +202,9 @@ result_matrix = worker.run(backend='gpu',
 
 - **Before run tutorial_config.py, batch_size parameter must be modified to fit your gpu memory size**
 - **You can set parameters and run FastTENET via a YAML file**
-- **The config file must have values set for all required parameters**
+- **The config file must have values set for all required parameters**. \
+You can also set `PAIR_MODE` to choose how node pairs are generated, and
+provide any required file paths via `PAIR_DATA`.
 
 #### Usage
 ```angular2html
@@ -212,6 +214,15 @@ python tutorial_config.py --config [config file path]
 #### Example
 ```angular2html
 python tutorial_config.py --config ../configs/config_tuck_sub.yml
+```
+
+Example YAML snippet for pair generation:
+```yaml
+PAIR_MODE: tenet_plus
+PAIR_DATA:
+  peaks: TE_peak_list.txt
+  tf_list: tf_list.txt
+  gene_chr: gene_chr.txt
 ```
 
 #### Output
