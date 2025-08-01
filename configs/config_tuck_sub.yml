@@ -24,3 +24,10 @@ KP: 0.5
 # the SMOOTHING_OPT parameter is optional and must be dictionary type (ex. {'method': 'exp'})
 # 'mov', 'savgol', 'exp', 'loess' method parameters are available.
 SMOOTHING_OPT: None
+
+# parameters for permutation_runner.py
+PERMUTATIONS: 100
+SHUFFLE: "trajectory"
+FDR: 0.05
+SPATH_GRN: "grn_permutation.sif"
+SPATH_TRIMMED_GRN: "grn_permutation.trim.sif"
