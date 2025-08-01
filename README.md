@@ -229,6 +229,14 @@ GENE_3	0.003	0.003	0	...	0.001
 GENE_M	0.34	0.012	0.032	...	0
 ```
 
+### Run permutation_runner.py
+The `permutation_runner.py` script uses the same YAML configuration but also reads additional keys for permutation testing. It repeatedly shuffles the specified data, runs FastTENET, and calculates empirical p-values for each edge.
+
+#### Usage
+```angular2html
+python permutation_runner.py --config [config file path]
+```
+
 ### Run FastTENET with tutorial_notf.py
 
 - **Before run tutorial_notf.py, batch_size parameter must be modified to fit your gpu memory size**
